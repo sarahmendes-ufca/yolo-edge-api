@@ -1,0 +1,4 @@
+[core]
+    remote = yolo-edge-api
+['remote "yolo-edge-api"']
+    url = ../../dvc-storage
