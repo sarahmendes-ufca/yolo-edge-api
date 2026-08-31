@@ -1,4 +1,6 @@
 [core]
-    remote = yolo-edge-api
+    remote = local_remote
 ['remote "yolo-edge-api"']
     url = ../../dvc-storage
+['remote "local_remote"']
+    url = /home/sarah/dvc-storage
