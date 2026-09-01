@@ -1,8 +1,6 @@
-
-
 # .github/workflows/edge-deploy.yml
-# Pipeline completo: lint → testes → build ARM64 → quality gate → deploy
-
+# Pipeline completo: lint → testes → build ARM64 → quality gate →
+# deploy
 name: Edge AI — Build, Test e Deploy
 
 on:
@@ -63,8 +61,7 @@ jobs:
         run: ruff check app/
 
       - name: Testes automatizados
-        run: pytest tests/ -v --tb=short -W ignore
-
+        run: pytest tests/ -v --tb=short
 
   # ─────────────────────────────────────────────────────────
   # JOB 2: Build da imagem Docker multi-arquitetura
@@ -198,5 +195,3 @@ jobs:
           echo "Deploy status: ${{ job.status }}"
           echo "Commit: ${{ github.sha }}"
           echo "Triggered by: ${{ github.actor }}"
-
-
