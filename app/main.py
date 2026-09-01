@@ -1,24 +1,21 @@
 import base64
 import io
 import time
-from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Response
-from PIL import Image
-import numpy as np
 import httpx
-
+import numpy as np
+from fastapi import FastAPI, HTTPException, Response
+from model import get_default_model_name, load_model
+from PIL import Image
 from schemas import (
-    PredictRequest,
-    PredictResponse,
     BatchPredictRequest,
     BatchPredictResponse,
+    Detection,
     HealthResponse,
     MetricsResponse,
-    Detection)
-
-from model import load_model, get_default_model_name
-
+    PredictRequest,
+    PredictResponse,
+)
 
 app = FastAPI(
     title="YOLO Inference API",
