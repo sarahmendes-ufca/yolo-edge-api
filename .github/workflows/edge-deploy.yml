@@ -63,7 +63,8 @@ jobs:
         run: ruff check app/
 
       - name: Testes automatizados
-        run: pytest tests/ -v --tb=short
+        run: pytest tests/ -v --tb=short -W ignore
+
 
   # ─────────────────────────────────────────────────────────
   # JOB 2: Build da imagem Docker multi-arquitetura
