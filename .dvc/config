@@ -3,4 +3,4 @@
 ['remote "yolo-edge-api"']
     url = ../../dvc-storage
 ['remote "local_remote"']
-    url = /home/sarah/dvc-storage
+    url = ssh://sarah@100.74.59.49/home/sarah/dvc-storage
