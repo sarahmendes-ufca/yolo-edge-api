@@ -4,7 +4,6 @@ import sys
 
 from ultralytics import YOLO
 
-
 MAP_THRESHOLD = 0.55  # mAP@0.5 mínimo aceitável
 DATASET_YAML = "datasets/validation.yaml"
 

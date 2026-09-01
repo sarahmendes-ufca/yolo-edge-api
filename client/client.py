@@ -1,12 +1,10 @@
 import base64
-import os
 import json
+import os
 import time
-
 from pathlib import Path
 
 import httpx
-
 
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 IMAGES_DIR = Path("/client/images")
@@ -132,6 +130,6 @@ if __name__ == "__main__":
         # Consulta métricas ao final
         metrics = httpx.get(f"{API_URL}/metrics").json()
 
-        print(f"\n─── Métricas da API ───")
+        print("\n─── Métricas da API ───")
         print(f" Total de requisições : {metrics['total_requests']}")
         print(f" Latência média : {metrics['avg_inference_ms']} ms")
