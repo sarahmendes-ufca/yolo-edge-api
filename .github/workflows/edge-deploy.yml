@@ -154,7 +154,7 @@ jobs:
           dvc pull
 
       - name: Recuperar dataset via DVC
-        run: dvc pull dataset/exports/epi-v1
+        run: dvc pull dataset/exports/epi-v1.dvc
 
       - name: Executar quality gate com dataset customizado
         run: |
