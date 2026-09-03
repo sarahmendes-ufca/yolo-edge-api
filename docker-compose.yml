@@ -32,12 +32,40 @@ services:
       - ./images:/client/images:ro
       - ./output:/client/output
     environment:
-      - API_URL=http://yolo-api:8000 # resolve pelo nome do serviço
+      - API_URL=http://yolo-api:8000
     networks:
       - yolo-net
     depends_on:
       yolo-api:
-        condition: service_healthy # aguarda healthcheck passar
+        condition: service_healthy
+
+  yolo-stream:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: yolo-stream
+    ports:
+      - "5000:5000"
+    privileged: true
+    volumes:
+      - ./stream:/app/stream
+      - ./models:/app/models:ro
+      - /dev:/dev
+      - /run/udev:/run/udev:ro
+    environment:
+      - MODEL_NAME=yolov8n.pt
+    command: >
+      python3 stream/mjpeg_server.py
+      --device 0
+      --infer-every 3
+      --infer-size 320
+      --port 5000
+    restart: unless-stopped
+    depends_on:
+      yolo-api:
+        condition: service_healthy
+    networks:
+      - yolo-net
 
 networks:
   yolo-net:

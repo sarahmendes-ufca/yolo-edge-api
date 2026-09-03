@@ -1,0 +1,261 @@
+#!/usr/bin/env python3
+"""
+stream/v1_naive.py — Implementação ingênua: diagnóstico de FPS e latência.
+
+Execução:
+    python3 stream/v1_naive.py --device 0 --width 640 --height 480
+"""
+
+import argparse
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import cv2
+import numpy as np
+import torch
+from ultralytics import YOLO
+
+
+# Compatibilidade com versões do PyTorch que usam weights_only=True
+# como comportamento padrão.
+_orig_torch_load = torch.load
+
+
+def _patched_torch_load(*args, **kwargs):
+    if "weights_only" not in kwargs:
+        kwargs["weights_only"] = False
+    return _orig_torch_load(*args, **kwargs)
+
+
+torch.load = _patched_torch_load
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+
+def _read_next_frame(proc, leftover: bytes):
+    """
+    Lê o próximo frame JPEG completo disponível no stdout do rpicamvid.
+
+    Não pula para o mais recente de propósito — reproduz o mesmo
+    comportamento de acúmulo de buffer que cv2.VideoCapture() tinha,
+    para que o diagnóstico continue medindo o problema real.
+    """
+    buf = leftover
+
+    while True:
+        start = buf.find(b"\xff\xd8")
+        end = (
+            buf.find(b"\xff\xd9", start + 2)
+            if start != -1
+            else -1
+        )
+
+        if start != -1 and end != -1:
+            jpg = buf[start:end + 2]
+
+            frame = cv2.imdecode(
+                np.frombuffer(jpg, dtype=np.uint8),
+                cv2.IMREAD_COLOR,
+            )
+
+            return buf[end + 2:], frame
+
+        chunk = proc.stdout.read(4096)
+
+        if not chunk:
+            return buf, None
+
+        buf += chunk
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--device",
+        type=int,
+        default=0,
+        help="Índice do dispositivo de câmera",
+    )
+
+    parser.add_argument(
+        "--width",
+        type=int,
+        default=640,
+        help="Largura de captura",
+    )
+
+    parser.add_argument(
+        "--height",
+        type=int,
+        default=480,
+        help="Altura de captura",
+    )
+
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="models/yolov8n.pt",
+    )
+
+    parser.add_argument(
+        "--conf",
+        type=float,
+        default=0.4,
+    )
+
+    parser.add_argument(
+        "--frames",
+        type=int,
+        default=100,
+        help="Frames para medir antes de encerrar",
+    )
+
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    print(f"[INFO] Carregando modelo: {args.model}")
+    model = YOLO(args.model)
+
+    print(
+        f"[INFO] Abrindo câmera CSI via rpicam-vid "
+        f"(câmera {args.device}) @ "
+        f"{args.width}x{args.height}"
+    )
+
+    cmd = [
+        "rpicam-vid",
+        "-t",
+        "0",
+        "-n",
+        "--codec",
+        "mjpeg",
+        "--camera",
+        str(args.device),
+        "--width",
+        str(args.width),
+        "--height",
+        str(args.height),
+        "-o",
+        "-",
+    ]
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+
+    leftover = b""
+
+    # ── Métricas de diagnóstico ─────────────────────────────
+    frame_count = 0
+    total_capture = 0.0
+    total_infer = 0.0
+    total_cycle = 0.0
+
+    print(f"[INFO] Medindo {args.frames} frames...")
+    print(
+        f"{'Frame':>6} | "
+        f"{'Captura':>8} | "
+        f"{'Inferência':>10} | "
+        f"{'Ciclo':>8} | "
+        f"{'FPS inst.':>9}"
+    )
+    print("-" * 58)
+
+    try:
+        while frame_count < args.frames:
+            t0 = time.perf_counter()
+
+            # ── Etapa 1: captura ─────────────────────────────
+            leftover, frame = _read_next_frame(proc, leftover)
+            t1 = time.perf_counter()
+
+            if frame is None:
+                print("[AVISO] Frame inválido, pulando.")
+                continue
+
+            # ── Etapa 2: inferência ──────────────────────────
+            model(frame, conf=args.conf, verbose=False)
+            t2 = time.perf_counter()
+
+            cap_ms = (t1 - t0) * 1000
+            infer_ms = (t2 - t1) * 1000
+            cycle_ms = (t2 - t0) * 1000
+            fps_inst = (
+                1000 / cycle_ms
+                if cycle_ms > 0
+                else 0
+            )
+
+            total_capture += cap_ms
+            total_infer += infer_ms
+            total_cycle += cycle_ms
+
+            frame_count += 1
+
+            if frame_count % 10 == 0:
+                print(
+                    f"{frame_count:>6} | "
+                    f"{cap_ms:>7.1f}ms | "
+                    f"{infer_ms:>9.1f}ms | "
+                    f"{cycle_ms:>7.1f}ms | "
+                    f"{fps_inst:>8.1f}"
+                )
+
+    finally:
+        proc.terminate()
+
+        try:
+            proc.wait(timeout=2.0)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
+    # ── Relatório final ─────────────────────────────────────
+    n = frame_count
+
+    print("\n" + "=" * 58)
+    print("RELATÓRIO DE DIAGNÓSTICO — Abordagem Ingênua")
+    print("=" * 58)
+
+    if n == 0:
+        print("Nenhum frame válido foi medido.")
+        print("=" * 58)
+        sys.exit(1)
+
+    avg_cap = total_capture / n
+    avg_infer = total_infer / n
+    avg_cycle = total_cycle / n
+    sustained_fps = 1000 / avg_cycle if avg_cycle > 0 else 0
+
+    print(f" Frames medidos   : {n}")
+    print(f" Captura média    : {avg_cap:>7.1f} ms")
+    print(f" Inferência média : {avg_infer:>7.1f} ms")
+    print(f" Ciclo médio      : {avg_cycle:>7.1f} ms")
+    print(f" FPS sustentado   : {sustained_fps:>7.1f} FPS")
+    print("=" * 58)
+    print()
+    print("DIAGNÓSTICO:")
+
+    if avg_cap > 50:
+        print(
+            f" ⚠️ Captura alta ({avg_cap:.0f}ms): "
+            "buffer acumulado detectado."
+        )
+        print(
+            " Solução: use threading + buffer de 1 frame "
+            "(v2_threaded.py)"
+        )
+    else:
+        print(f" ✓ Captura OK ({avg_cap:.0f}ms)")
+
+
+if __name__ == "__main__":
+    main()
